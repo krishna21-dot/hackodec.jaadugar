@@ -1,0 +1,1633 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SyncSpace — Multiplayer in 10 Lines</title>
+  <meta name="description" content="SyncSpace is an ultra-lightweight real-time multiplayer coordination library for shared state, live cursors, and online presence.">
+  
+  <!-- Modern Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --bg-base: #0a0e17;
+      --bg-card: rgba(18, 26, 43, 0.75);
+      --bg-card-hover: rgba(24, 34, 56, 0.85);
+      --border-color: rgba(255, 255, 255, 0.08);
+      --border-color-focus: rgba(99, 102, 241, 0.5);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --accent: #6366f1;
+      --accent-glow: rgba(99, 102, 241, 0.35);
+      --ok: #10b981;
+      --ok-glow: rgba(16, 185, 129, 0.3);
+      --warn: #f59e0b;
+      --warn-glow: rgba(245, 158, 11, 0.3);
+      --bad: #ef4444;
+      --bad-glow: rgba(239, 68, 68, 0.3);
+      --room-accent: #6366f1;
+      --accent-rgb: 99, 102, 241;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+      background-color: var(--bg-base);
+      color: var(--text-main);
+      min-height: 100vh;
+      overflow-x: hidden;
+      position: relative;
+      transition: background-color 0.6s ease;
+      background-image: 
+        radial-gradient(circle at 15% 20%, rgba(var(--accent-rgb), 0.45) 0%, transparent 55%),
+        radial-gradient(circle at 85% 80%, rgba(var(--accent-rgb), 0.35) 0%, transparent 55%);
+      background-attachment: fixed;
+    }
+
+    /* Ambient room glow */
+    .ambient-glow {
+      position: fixed;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 1400px;
+      height: 700px;
+      max-width: 100vw;
+      background: radial-gradient(circle, var(--room-accent) 0%, transparent 70%);
+      opacity: 0.55;
+      pointer-events: none;
+      z-index: 0;
+      transition: background 0.6s ease, opacity 0.4s ease;
+      filter: blur(80px);
+    }
+
+    /* Header Navigation */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 40;
+      background: linear-gradient(rgba(var(--accent-rgb), 0.28), rgba(var(--accent-rgb), 0.28)), rgba(10, 14, 23, 0.85);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border-bottom: 3px solid var(--accent);
+      transition: background 0.5s ease, border-color 0.5s ease;
+      padding: 12px 24px;
+    }
+
+    .header-inner {
+      max-width: 1280px;
+      margin: 0 auto;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: inherit;
+    }
+
+    .brand-icon {
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, var(--accent) 0%, #ec4899 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 20px rgba(var(--accent-rgb), 0.6);
+      font-size: 18px;
+    }
+
+    .brand-text h1 {
+      font-size: 1.25rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .brand-badge {
+      font-size: 0.68rem;
+      font-weight: 600;
+      background: rgba(var(--accent-rgb), 0.25);
+      color: #fff;
+      border: 1px solid rgba(var(--accent-rgb), 0.6);
+      padding: 2px 8px;
+      border-radius: 999px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .controls-deck {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .room-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border-color);
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      color: var(--text-main);
+    }
+
+    .room-pill span {
+      color: var(--text-dim);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+    }
+
+    .user-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border-color);
+      padding: 4px 10px;
+      border-radius: 8px;
+    }
+
+    .user-color-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--accent);
+      flex-shrink: 0;
+    }
+
+    .user-input {
+      background: transparent;
+      border: none;
+      color: var(--text-main);
+      font-family: inherit;
+      font-size: 0.85rem;
+      font-weight: 600;
+      width: 100px;
+      outline: none;
+    }
+
+    .user-input:focus {
+      border-bottom: 1px solid var(--accent);
+    }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-family: inherit;
+      font-size: 0.84rem;
+      font-weight: 600;
+      padding: 7px 14px;
+      border-radius: 8px;
+      border: 1px solid var(--border-color);
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text-main);
+      cursor: pointer;
+      transition: all 0.18s ease;
+      white-space: nowrap;
+    }
+
+    .btn:hover {
+      background: rgba(255, 255, 255, 0.12);
+      border-color: rgba(255, 255, 255, 0.2);
+      transform: translateY(-1px);
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent) 0%, rgba(var(--accent-rgb), 0.65) 100%);
+      border-color: var(--accent);
+      color: #fff;
+      box-shadow: 0 4px 14px rgba(var(--accent-rgb), 0.5);
+    }
+
+    .btn-primary:hover {
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent) 100%);
+      filter: brightness(1.15);
+      box-shadow: 0 6px 20px rgba(var(--accent-rgb), 0.7);
+    }
+
+    .btn-outline-danger {
+      border-color: rgba(239, 68, 68, 0.3);
+      color: #f87171;
+    }
+    .btn-outline-danger:hover {
+      background: rgba(239, 68, 68, 0.1);
+      border-color: #ef4444;
+    }
+
+    /* Status indicator */
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border-color);
+      color: var(--text-muted);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--warn);
+      box-shadow: 0 0 10px var(--warn-glow);
+      transition: background 0.3s ease;
+    }
+
+    .status-dot.open {
+      background: var(--ok);
+      box-shadow: 0 0 12px var(--ok-glow);
+      animation: pulse-dot 2s infinite ease-in-out;
+    }
+
+    .status-dot.reconnecting, .status-dot.closed {
+      background: var(--bad);
+      box-shadow: 0 0 12px var(--bad-glow);
+    }
+
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.6; transform: scale(1.15); }
+    }
+
+    /* Main Container */
+    main {
+      position: relative;
+      z-index: 10;
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 24px 20px 48px;
+      display: grid;
+      gap: 20px;
+      grid-template-columns: 2.2fr 1fr;
+    }
+
+    @media (max-width: 960px) {
+      main { grid-template-columns: 1fr; }
+    }
+
+    /* Cards */
+    .card {
+      background: var(--bg-card);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(var(--accent-rgb), 0.45);
+      border-top: 3px solid var(--accent);
+      border-radius: 16px;
+      padding: 22px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.36), 0 0 40px rgba(var(--accent-rgb), 0.18);
+      transition: border-color 0.4s ease, box-shadow 0.4s ease;
+    }
+
+    .card:hover {
+      border-color: rgba(var(--accent-rgb), 0.8);
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+
+    .card-title {
+      font-size: 0.95rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text-main);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .card-title svg {
+      width: 18px;
+      height: 18px;
+      color: var(--accent);
+    }
+
+    /* Collaborative Notepad */
+    .notepad-wrapper {
+      position: relative;
+      width: 100%;
+    }
+
+    textarea.notepad {
+      width: 100%;
+      min-height: 220px;
+      background: rgba(10, 14, 23, 0.65);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 16px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.92rem;
+      line-height: 1.6;
+      color: var(--text-main);
+      resize: vertical;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    textarea.notepad:focus {
+      border-color: var(--border-color-focus);
+      box-shadow: 0 0 0 2px var(--accent-glow);
+    }
+
+    .notepad-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 8px;
+      font-size: 0.78rem;
+      color: var(--text-dim);
+    }
+
+    .typing-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--accent);
+      font-weight: 500;
+      min-height: 18px;
+    }
+
+    /* Shared Widget Deck */
+    .widgets-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-top: 20px;
+    }
+
+    @media (max-width: 680px) {
+      .widgets-grid { grid-template-columns: 1fr; }
+    }
+
+    .widget-box {
+      background: rgba(10, 14, 23, 0.45);
+      border: 1px solid rgba(var(--accent-rgb), 0.4);
+      border-radius: 14px;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .widget-box h3 {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+    }
+
+    /* Counter Display */
+    .counter-display {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 3rem;
+      font-weight: 800;
+      text-align: center;
+      padding: 12px;
+      border-radius: 12px;
+      background: rgba(var(--accent-rgb), 0.15);
+      border: 1px solid rgba(var(--accent-rgb), 0.6);
+      color: #fff;
+      text-shadow: 0 0 22px var(--accent);
+      transition: transform 0.12s ease;
+    }
+
+    .counter-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+    }
+
+    /* Color Swatches */
+    .swatches-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .swatch-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      border: 2px solid transparent;
+      cursor: pointer;
+      transition: transform 0.15s ease, border-color 0.15s ease;
+    }
+
+    .swatch-btn:hover {
+      transform: scale(1.12);
+    }
+
+    .swatch-btn.active {
+      border-color: #fff;
+      box-shadow: 0 0 14px rgba(255, 255, 255, 0.4);
+    }
+
+    /* Emoji Burst Pad */
+    .reactions-row {
+      display: flex;
+      gap: 8px;
+      justify-content: space-around;
+      background: rgba(255, 255, 255, 0.02);
+      padding: 8px;
+      border-radius: 10px;
+    }
+
+    .react-btn {
+      font-size: 1.4rem;
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      padding: 4px;
+      border-radius: 8px;
+      transition: transform 0.12s ease;
+    }
+
+    .react-btn:hover {
+      transform: scale(1.3);
+    }
+    .react-btn:active {
+      transform: scale(0.9);
+    }
+
+    /* Shared Idea Cards / Tasks */
+    .tasks-deck {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 190px;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+
+    .task-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 0.86rem;
+      gap: 8px;
+    }
+
+    .task-item.completed span {
+      text-decoration: line-through;
+      color: var(--text-dim);
+    }
+
+    .task-toggle {
+      width: 16px;
+      height: 16px;
+      accent-color: var(--ok);
+      cursor: pointer;
+    }
+
+    .task-del {
+      background: transparent;
+      border: none;
+      color: var(--text-dim);
+      font-size: 1rem;
+      cursor: pointer;
+      padding: 0 4px;
+    }
+    .task-del:hover { color: var(--bad); }
+
+    .add-task-form {
+      display: flex;
+      gap: 8px;
+      margin-top: 6px;
+    }
+
+    .add-task-input {
+      flex: 1;
+      background: rgba(10, 14, 23, 0.6);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 6px 10px;
+      color: #fff;
+      font-size: 0.84rem;
+      outline: none;
+    }
+    .add-task-input:focus { border-color: var(--accent); }
+
+    /* Aside: Online Presence */
+    .presence-card {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .presence-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .presence-counter {
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--ok);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      padding: 2px 10px;
+      border-radius: 999px;
+      font-size: 0.76rem;
+      font-weight: 700;
+    }
+
+    .peers-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .peer-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 10px 14px;
+      animation: fadeIn 0.3s ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .peer-avatar {
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-weight: 700;
+      font-size: 0.88rem;
+      flex-shrink: 0;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    }
+
+    .peer-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .peer-name {
+      font-weight: 600;
+      font-size: 0.88rem;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .peer-badge-you {
+      font-size: 0.65rem;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: rgba(var(--accent-rgb), 0.3);
+      color: #fff;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .peer-status {
+      font-size: 0.72rem;
+      color: var(--ok);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    /* Integration Code Card */
+    .code-card {
+      margin-top: 10px;
+      background: rgba(10, 14, 23, 0.7);
+      border: 1px solid var(--border-color);
+      border-radius: 14px;
+      overflow: hidden;
+    }
+
+    .code-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      background: rgba(255, 255, 255, 0.03);
+      border-bottom: 1px solid var(--border-color);
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+
+    pre.code-block {
+      padding: 14px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.78rem;
+      line-height: 1.6;
+      color: #cbd5e1;
+      overflow-x: auto;
+    }
+
+    pre.code-block .k { color: #f43f5e; } /* keyword */
+    pre.code-block .s { color: #34d399; } /* string */
+    pre.code-block .f { color: #60a5fa; } /* function */
+    pre.code-block .c { color: #64748b; } /* comment */
+
+    /* Live Remote Cursors */
+    .cursor-peer {
+      position: fixed;
+      pointer-events: none;
+      z-index: 9999;
+      top: 0;
+      left: 0;
+      will-change: transform;
+      transition: transform 0.08s cubic-bezier(0, 0, 0.2, 1);
+    }
+
+    .cursor-peer svg {
+      width: 20px;
+      height: 20px;
+      filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+    }
+
+    .cursor-peer-label {
+      position: absolute;
+      top: 16px;
+      left: 14px;
+      padding: 2px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #fff;
+      white-space: nowrap;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    }
+
+    /* History lists (notepad edits, counter changes) */
+    .history-box {
+      margin-top: 12px;
+      border-top: 1px solid var(--border-color);
+      padding-top: 10px;
+    }
+    .history-box summary {
+      cursor: pointer;
+      font-size: 0.78rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      user-select: none;
+    }
+    .history-list {
+      list-style: none;
+      margin-top: 8px;
+      max-height: 190px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .history-item {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+      font-size: 0.78rem;
+      line-height: 1.4;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 6px 8px;
+    }
+    .history-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      margin-top: 5px;
+      flex-shrink: 0;
+    }
+    .history-main { flex: 1; min-width: 0; word-break: break-word; }
+    .history-user { font-weight: 700; }
+    .history-time { color: var(--text-dim); font-size: 0.7rem; white-space: nowrap; }
+    .history-add { color: #34d399; }
+    .history-del { color: #f87171; }
+    .history-empty { font-size: 0.78rem; color: var(--text-dim); padding: 6px 2px; }
+
+    .reaction-feed {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      min-height: 20px;
+    }
+
+    .floating-reaction-name {
+      display: block;
+      font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: #fff;
+      background: var(--accent);
+      border-radius: 999px;
+      padding: 2px 10px;
+      margin: 2px auto 0;
+      width: max-content;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+    }
+
+    /* Floating Emoji Reactions */
+    .floating-reaction {
+      position: fixed;
+      pointer-events: none;
+      z-index: 999;
+      font-size: 2.2rem;
+      text-align: center;
+      animation: floatUp 2.4s ease-out forwards;
+    }
+
+    @keyframes floatUp {
+      0% {
+        opacity: 1;
+        transform: translate(0, 0) scale(0.6);
+      }
+      50% {
+        transform: translate(calc((var(--drift, 0) * 80px)), -120px) scale(1.2);
+      }
+      100% {
+        opacity: 0;
+        transform: translate(calc((var(--drift, 0) * 160px)), -260px) scale(0.8);
+      }
+    }
+
+    /* Toast Notification Center */
+    #toast-container {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      z-index: 10000;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      pointer-events: none;
+    }
+
+    .toast-msg {
+      background: rgba(18, 26, 43, 0.95);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 10px 18px;
+      border-radius: 10px;
+      font-size: 0.85rem;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(10px);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      animation: toastIn 0.25s ease-out;
+      pointer-events: auto;
+    }
+
+    .toast-msg.error {
+      border-color: rgba(239, 68, 68, 0.4);
+      color: #fca5a5;
+    }
+
+    @keyframes toastIn {
+      from { opacity: 0; transform: translateY(12px) scale(0.95); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Ambient background glow reacting to room color -->
+  <div class="ambient-glow" id="ambientGlow"></div>
+
+  <!-- Header -->
+  <header>
+    <div class="header-inner">
+      <a href="#" class="brand">
+        <div class="brand-icon">⚡</div>
+        <div class="brand-text">
+          <h1>SyncSpace <span class="brand-badge">Multiplayer in 10 lines</span></h1>
+        </div>
+      </a>
+
+      <div class="controls-deck">
+        <!-- Room pill -->
+        <div class="room-pill" title="Current collaboration room">
+          <span>Room:</span>
+          <strong id="roomDisplay">...</strong>
+        </div>
+
+        <!-- Name badge -->
+        <div class="user-pill" title="Click to rename yourself">
+          <div class="user-color-dot" id="myColorDot"></div>
+          <input type="text" id="nameInput" class="user-input" maxlength="24" title="Your display name">
+        </div>
+
+        <!-- Action buttons -->
+        <button id="copyBtn" class="btn" title="Copy shareable room link">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+          <span id="copyBtnText">Copy Link</span>
+        </button>
+
+        <button id="newRoomBtn" class="btn" title="Create a brand new room">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+          New Room
+        </button>
+
+        <!-- Test Disconnect button -->
+        <button id="simDisconnectBtn" class="btn btn-outline-danger" title="Test automatic reconnection and state restore">
+          ⚡ Drop &amp; Reconnect
+        </button>
+
+        <!-- Connection status -->
+        <div class="status-badge">
+          <span class="status-dot" id="statusDot"></span>
+          <span id="statusLabel">Connecting...</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content Layout -->
+  <main>
+    <!-- Left Column: Collaborative Workspace -->
+    <section style="display: flex; flex-direction: column; gap: 20px;">
+      
+      <!-- Collaborative Notepad Card -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+            Collaborative Live Notepad
+          </div>
+          <span class="typing-badge" id="typingStatus"></span>
+        </div>
+
+        <div class="notepad-wrapper">
+          <textarea id="notepad" class="notepad" maxlength="50000" placeholder="Type here in real-time... Open this URL in multiple browser tabs or send to your hackathon teammates! Every keystroke syncs live."></textarea>
+        </div>
+
+        <div class="notepad-footer">
+          <span id="notepadStats">0 words · 0 characters</span>
+          <span>⚡ Synced automatically across all room peers</span>
+        </div>
+
+        <!-- Notepad edit history (who changed what, and when) -->
+        <details class="history-box" id="padHistoryBox">
+          <summary>📜 Notepad edit history (<span id="padHistoryCount">0</span>)</summary>
+          <ul class="history-list" id="padHistoryList"></ul>
+        </details>
+      </div>
+
+      <!-- Shared Widgets Grid -->
+      <div class="widgets-grid">
+        
+        <!-- Shared Counter & Ambient Color -->
+        <div class="widget-box">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h3>Shared Room Counter</h3>
+            <span style="font-size: 0.72rem; color: var(--text-dim);">Live Sync</span>
+          </div>
+
+          <div class="counter-display" id="counterBox">0</div>
+
+          <div class="counter-actions">
+            <button class="btn btn-primary" id="incBtn" style="flex: 1;">+1 for Everyone</button>
+            <button class="btn" id="decBtn">-1</button>
+            <button class="btn" id="resetBtn">Reset</button>
+          </div>
+
+          <!-- Counter history (who pressed what) -->
+          <details class="history-box" id="counterHistoryBox" style="margin-top: 0;">
+            <summary>📜 Counter history (<span id="counterHistoryCount">0</span>)</summary>
+            <ul class="history-list" id="counterHistoryList"></ul>
+          </details>
+
+          <div style="margin-top: 6px;">
+            <h3 style="margin-bottom: 8px;">Room Ambient Accent</h3>
+            <div class="swatches-row" id="swatchesContainer"></div>
+          </div>
+        </div>
+
+        <!-- Shared Reactions & Brainstorm Deck -->
+        <div class="widget-box">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h3>Live Emoji Reactions</h3>
+            <span style="font-size: 0.72rem; color: var(--text-dim);">Broadcast to room</span>
+          </div>
+
+          <!-- Emoji burst buttons -->
+          <div class="reactions-row">
+            <button class="react-btn" data-emoji="🚀" title="Send Rocket">🚀</button>
+            <button class="react-btn" data-emoji="🔥" title="Send Fire">🔥</button>
+            <button class="react-btn" data-emoji="🎉" title="Send Party">🎉</button>
+            <button class="react-btn" data-emoji="💡" title="Send Idea">💡</button>
+            <button class="react-btn" data-emoji="❤️" title="Send Heart">❤️</button>
+          </div>
+
+          <!-- Who sent which reaction -->
+          <ul class="reaction-feed" id="reactionFeed"></ul>
+
+          <div style="margin-top: 6px;">
+            <h3 style="margin-bottom: 6px;">Shared Ideas &amp; Tasks</h3>
+            <div class="tasks-deck" id="tasksList"></div>
+            <form class="add-task-form" id="addTaskForm">
+              <input type="text" id="taskInput" class="add-task-input" placeholder="Add shared idea..." maxlength="60">
+              <button type="submit" class="btn" style="padding: 6px 12px;">Add</button>
+            </form>
+          </div>
+        </div>
+
+      </div>
+
+    </section>
+
+    <!-- Right Column: Presence, Live Peers & Library Code -->
+    <aside style="display: flex; flex-direction: column; gap: 20px;">
+      
+      <!-- Online Presence Card -->
+      <div class="card presence-card">
+        <div class="presence-header">
+          <div class="card-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+            Active Peers
+          </div>
+          <span class="presence-counter" id="peerCount">1 Online</span>
+        </div>
+
+        <ul class="peers-list" id="peersList"></ul>
+
+        <div style="font-size: 0.8rem; color: var(--text-dim); line-height: 1.5; border-top: 1px solid var(--border-color); padding-top: 12px;">
+          💡 <strong>Live Cursors:</strong> Move your mouse over this page. Other connected tabs will see your pointer and name tag move smoothly in real-time.
+        </div>
+      </div>
+
+      <!-- 10-Line Integration Code Box -->
+      <div class="code-card">
+        <div class="code-card-header">
+          <span>⚡ Multiplayer in 10 lines API</span>
+          <span style="color: var(--accent); font-family: monospace;">syncspace.js</span>
+        </div>
+        <pre class="code-block"><code><span class="c">// 1. Connect to room</span>
+<span class="k">const</span> room = <span class="f">SyncSpace.connect</span>({
+  url: <span class="s">'wss://your-server'</span>,
+  room: <span class="s">'hackathon'</span>,
+  name: <span class="s">'Alex'</span>
+});
+
+<span class="c">// 2. Listen to state changes</span>
+room.<span class="f">on</span>(<span class="s">'state'</span>, (k, v) => <span class="f">updateUI</span>(k, v));
+
+<span class="c">// 3. Sync live cursors</span>
+room.<span class="f">on</span>(<span class="s">'cursor'</span>, (id, x, y, peer) => <span class="f">drawCursor</span>(id, x, y, peer));
+document.<span class="f">onmousemove</span> = e => room.<span class="f">cursor</span>(e.clientX/innerWidth, e.clientY/innerHeight);
+
+<span class="c">// 4. Mutate shared state (synced!)</span>
+room.<span class="f">set</span>(<span class="s">'score'</span>, 42);</code></pre>
+      </div>
+
+    </aside>
+  </main>
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container"></div>
+
+  <!-- Scripts -->
+  <script src="config.js"></script>
+  <script src="syncspace.js"></script>
+  <script src="ot.js"></script>
+  <script>
+    // Pure integration using ONLY the public SyncSpace API!
+    (function () {
+      var $ = function (id) { return document.getElementById(id); };
+
+      // 1. Resolve room from URL query param, or generate clean random room
+      var params = new URLSearchParams(window.location.search);
+      var roomId = params.get('room');
+      if (!roomId || !/^[A-Za-z0-9_-]{1,32}$/.test(roomId)) {
+        roomId = SyncSpace.randomRoom();
+        var newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname + '?room=' + roomId;
+        window.history.replaceState({ path: newUrl }, '', newUrl);
+      }
+      $('roomDisplay').textContent = roomId;
+
+      // 2. Resolve WebSocket Server URL
+      var wsUrl = window.SYNCSPACE_URL;
+      if (!wsUrl) {
+        var proto = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+        wsUrl = proto + (window.location.host || 'localhost:3000');
+      }
+
+      // 3. Resolve user identity
+      var myName = localStorage.getItem('syncspace-user-name') || ('Hacker-' + Math.floor(Math.random() * 900 + 100));
+      $('nameInput').value = myName;
+
+      // 4. Connect to SyncSpace room
+      var room = SyncSpace.connect({
+        url: wsUrl,
+        room: roomId,
+        name: myName
+      });
+
+      // Ambient theme swatches
+      var SWATCH_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#06b6d4', '#8b5cf6'];
+      var swatchesEl = $('swatchesContainer');
+      SWATCH_COLORS.forEach(function (c) {
+        var btn = document.createElement('button');
+        btn.className = 'swatch-btn';
+        btn.dataset.color = c;
+        btn.style.backgroundColor = c;
+        btn.onclick = function () {
+          room.set('room_color', c);
+          applyRoomColor(c);
+        };
+        swatchesEl.appendChild(btn);
+      });
+
+      // Helpers to turn "#rrggbb" into numbers, and to tint a dark color with the accent
+      function hexToRgb(hex) {
+        var n = parseInt(hex.replace('#', ''), 16);
+        return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+      }
+      function tintDark(hex, amount) {
+        var c = hexToRgb(hex), base = [10, 14, 23];
+        return 'rgb(' + base.map(function (b, i) {
+          return Math.round(b * (1 - amount) + c[i] * amount);
+        }).join(',') + ')';
+      }
+
+      function applyRoomColor(color) {
+        var c = color || SWATCH_COLORS[0];
+        var rgb = hexToRgb(c).join(', ');
+        var root = document.documentElement.style;
+        // These variables are used all over the page: background, top bar, cards, buttons, counter...
+        root.setProperty('--room-accent', c);
+        root.setProperty('--accent', c);
+        root.setProperty('--accent-rgb', rgb);
+        root.setProperty('--accent-glow', 'rgba(' + rgb + ', 0.5)');
+        root.setProperty('--border-color-focus', 'rgba(' + rgb + ', 0.9)');
+        root.setProperty('--bg-base', tintDark(c, 0.3));
+        $('ambientGlow').style.background = 'radial-gradient(circle, ' + c + ' 0%, transparent 70%)';
+        document.querySelectorAll('.swatch-btn').forEach(function (b) {
+          b.classList.toggle('active', b.dataset.color === c);
+        });
+      }
+
+      // Render all shared states
+      function renderState(key) {
+        // Room color
+        if (!key || key === 'room_color') {
+          applyRoomColor(room.get('room_color'));
+        }
+
+        // Shared Tasks / Ideas
+        if (!key || key === 'tasks') {
+          renderTasks(room.get('tasks') || []);
+        }
+      }
+
+      function updateNotepadStats(text) {
+        var words = text.trim() ? text.trim().split(/\s+/).length : 0;
+        $('notepadStats').textContent = words + ' words · ' + text.length + ' characters';
+      }
+
+      // ------------------------------------------------------------------
+      // Helpers for the history lists
+      // ------------------------------------------------------------------
+      function fmtTime(ts) {
+        var d = new Date(ts), now = new Date();
+        var time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        if (d.toDateString() === now.toDateString()) return time;
+        return d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + time;
+      }
+
+      function makeHistoryItem(color, userName, detailNodes, ts) {
+        var li = document.createElement('li');
+        li.className = 'history-item';
+        var dot = document.createElement('span');
+        dot.className = 'history-dot';
+        dot.style.backgroundColor = color || '#6366f1';
+        var main = document.createElement('div');
+        main.className = 'history-main';
+        var who = document.createElement('span');
+        who.className = 'history-user';
+        who.textContent = userName || 'Guest';
+        main.appendChild(who);
+        detailNodes.forEach(function (n) { main.appendChild(n); });
+        var time = document.createElement('span');
+        time.className = 'history-time';
+        time.textContent = fmtTime(ts);
+        li.appendChild(dot);
+        li.appendChild(main);
+        li.appendChild(time);
+        return li;
+      }
+
+      function textNode(text, cls) {
+        var span = document.createElement('span');
+        if (cls) span.className = cls;
+        span.textContent = text;
+        return span;
+      }
+
+      // ------------------------------------------------------------------
+      // Notepad: edits are merged safely, and every edit is recorded with the user's name
+      // ------------------------------------------------------------------
+      var notepadEl = $('notepad');
+      var docClient = null;     // keeps our copy of the notepad in step with the server
+      var padHistory = [];      // list of { id, user, color, ts, added, removed, ... }
+      notepadEl.readOnly = true; // locked until we have the room's text
+
+      function sendDocOp(rev, op, opId, isResend) {
+        room.send('doc-op', { rev: rev, op: op, opId: opId, resend: !!isResend });
+      }
+
+      // When (re)connecting, tell the server which notepad revision we already have
+      room.joinExtra = function () {
+        return docClient ? { docRev: docClient.rev } : null;
+      };
+
+      // Put text into the box while keeping the cursor where it was
+      function showDocText(text, op) {
+        var focused = document.activeElement === notepadEl;
+        var s = notepadEl.selectionStart, e = notepadEl.selectionEnd, top = notepadEl.scrollTop;
+        notepadEl.value = text;
+        if (focused) {
+          try {
+            if (op) notepadEl.setSelectionRange(SyncOT.transformCursor(s, op), SyncOT.transformCursor(e, op));
+            else notepadEl.setSelectionRange(Math.min(s, text.length), Math.min(e, text.length));
+          } catch (err) {}
+        }
+        notepadEl.scrollTop = top;
+        updateNotepadStats(text);
+      }
+
+      function updateNotepadStats(text) {
+        var words = text.trim() ? text.trim().split(/\s+/).length : 0;
+        $('notepadStats').textContent = words + ' words · ' + text.length + ' characters';
+      }
+
+      function renderPadHistory() {
+        var listEl = $('padHistoryList');
+        listEl.innerHTML = '';
+        $('padHistoryCount').textContent = padHistory.length;
+        if (!padHistory.length) {
+          var empty = document.createElement('li');
+          empty.className = 'history-empty';
+          empty.textContent = 'No edits yet. Start typing and your name will appear here.';
+          listEl.appendChild(empty);
+          return;
+        }
+        padHistory.slice().reverse().forEach(function (h) {
+          var parts = [];
+          if (h.added) parts.push(textNode(' added ' + h.added + ' char' + (h.added === 1 ? '' : 's') + (h.addedText ? ' “' + h.addedText + (h.added > h.addedText.length ? '…' : '') + '”' : ''), 'history-add'));
+          if (h.removed) parts.push(textNode((h.added ? ' · ' : ' ') + 'removed ' + h.removed + ' char' + (h.removed === 1 ? '' : 's') + (h.removedText ? ' “' + h.removedText + (h.removed > h.removedText.length ? '…' : '') + '”' : ''), 'history-del'));
+          listEl.appendChild(makeHistoryItem(h.color, h.user, parts, h.endTs || h.ts));
+        });
+      }
+
+      function upsertPadHistory(entry) {
+        if (!entry) return;
+        var i = padHistory.findIndex(function (h) { return h.id === entry.id; });
+        if (i >= 0) padHistory[i] = entry; else padHistory.push(entry);
+        padHistory.sort(function (a, b) { return a.id - b.id; });
+        renderPadHistory();
+      }
+
+      // User typed or erased something
+      var typingTimer = null;
+      notepadEl.addEventListener('input', function () {
+        var val = notepadEl.value;
+        if (docClient) docClient.setLocalText(val);
+        updateNotepadStats(val);
+
+        // Broadcast typing signal
+        room.set('typing_' + room.me().id, { name: room.me().name, t: Date.now() });
+        clearTimeout(typingTimer);
+        typingTimer = setTimeout(function () {
+          room.set('typing_' + room.me().id, undefined);
+        }, 1200);
+      });
+
+      // ------------------------------------------------------------------
+      // Shared counter: the server adds/subtracts, so two clicks at once BOTH count
+      // ------------------------------------------------------------------
+      var counterHistory = [];
+
+      function renderCounter(value) {
+        $('counterBox').textContent = value;
+        var listEl = $('counterHistoryList');
+        listEl.innerHTML = '';
+        $('counterHistoryCount').textContent = counterHistory.length;
+        if (!counterHistory.length) {
+          var empty = document.createElement('li');
+          empty.className = 'history-empty';
+          empty.textContent = 'No changes yet. Press +1, -1 or Reset.';
+          listEl.appendChild(empty);
+          return;
+        }
+        counterHistory.slice().reverse().forEach(function (h) {
+          var what;
+          if (h.action === 'inc') what = ' added +1 → ' + h.value;
+          else if (h.action === 'dec') what = ' subtracted 1 → ' + h.value;
+          else what = ' reset the counter (was ' + h.before + ') → ' + h.value;
+          listEl.appendChild(makeHistoryItem(h.color, h.user, [textNode(what, h.action === 'dec' ? 'history-del' : (h.action === 'inc' ? 'history-add' : ''))], h.ts));
+        });
+      }
+
+      function counterAction(action) {
+        if (!room.send('counter', { action: action })) {
+          showToast('You are offline right now. Try again when it reconnects.', true);
+        }
+      }
+      $('incBtn').onclick = function () { counterAction('inc'); };
+      $('decBtn').onclick = function () { counterAction('dec'); };
+      $('resetBtn').onclick = function () { counterAction('reset'); };
+
+      // Messages from the server about the notepad and counter
+      room.on('welcome', function (msg) {
+        var d = msg.doc || { text: '', rev: 0 };
+        if (!docClient) {
+          docClient = new SyncOT.DocClient(d.rev, d.text, sendDocOp);
+          showDocText(d.text);
+        } else {
+          // Reconnected: replay the edits we missed, then re-send anything not yet confirmed
+          var ok = Array.isArray(msg.docOps);
+          if (ok) {
+            for (var i = 0; i < msg.docOps.length; i++) {
+              var o = msg.docOps[i];
+              var res = docClient.receive(o.rev, o.op, o.opId);
+              if (res === false) { ok = false; break; }
+              if (res) showDocText(docClient.text, res);
+            }
+          }
+          var clean = !docClient.pending && !docClient.buffer;
+          if (!ok || docClient.rev !== d.rev || (clean && docClient.text !== d.text)) {
+            docClient.reset(d.rev, d.text);   // fall back to the server's copy
+            showDocText(d.text);
+          } else {
+            docClient.resend();
+          }
+        }
+        notepadEl.readOnly = false;
+        padHistory = (msg.docHistory || []).slice();
+        renderPadHistory();
+        var c = msg.counter || { value: 0, history: [] };
+        counterHistory = (c.history || []).slice();
+        renderCounter(c.value || 0);
+      });
+
+      room.on('message', function (msg) {
+        if (msg.t === 'counter') {
+          if (msg.entry) counterHistory.push(msg.entry);
+          if (counterHistory.length > 100) counterHistory.shift();
+          renderCounter(msg.value);
+          return;
+        }
+        if (!docClient) return;
+        if (msg.t === 'doc-ack') {
+          if (!docClient.ack(msg.rev)) room.send('doc-sync');
+          upsertPadHistory(msg.entry);
+        } else if (msg.t === 'doc-op') {
+          var res = docClient.receive(msg.rev, msg.op, msg.opId);
+          if (res === false) room.send('doc-sync');            // we missed something: ask for a fresh copy
+          else if (res) showDocText(docClient.text, res);      // show the other person's edit
+          upsertPadHistory(msg.entry);
+        } else if (msg.t === 'doc-resync') {
+          docClient.reset(msg.rev, msg.text);
+          showDocText(msg.text);
+        }
+      });
+
+      // ------------------------------------------------------------------
+      // Reactions: show WHO sent each one
+      // ------------------------------------------------------------------
+      var reactionLog = [];
+
+      function addReactionFeed(emoji, name) {
+        reactionLog.push({ emoji: emoji, name: name, ts: Date.now() });
+        if (reactionLog.length > 5) reactionLog.shift();
+        var listEl = $('reactionFeed');
+        listEl.innerHTML = '';
+        reactionLog.slice().reverse().forEach(function (r) {
+          var li = document.createElement('li');
+          li.textContent = r.emoji + '  ' + r.name + ' · ' + fmtTime(r.ts);
+          listEl.appendChild(li);
+        });
+      }
+
+      document.querySelectorAll('.react-btn').forEach(function (btn) {
+        btn.onclick = function () {
+          var emoji = btn.dataset.emoji;
+          var myName = room.me().name;
+          // Set reaction with unique timestamp to trigger across all peers
+          room.set('reaction', { emoji: emoji, t: Date.now(), from: myName });
+          spawnFloatingEmoji(emoji, myName);
+          addReactionFeed(emoji, myName);
+        };
+      });
+
+      function spawnFloatingEmoji(emoji, name) {
+        var el = document.createElement('div');
+        el.className = 'floating-reaction';
+        el.appendChild(document.createTextNode(emoji));
+        if (name) {
+          var label = document.createElement('span');
+          label.className = 'floating-reaction-name';
+          label.textContent = name;
+          el.appendChild(label);
+        }
+        el.style.left = (Math.random() * 70 + 15) + 'vw';
+        el.style.bottom = '80px';
+        el.style.setProperty('--drift', (Math.random() - 0.5).toString());
+        document.body.appendChild(el);
+        setTimeout(function () { el.remove(); }, 2400);
+      }
+
+      // Shared Tasks / Ideas deck
+      function renderTasks(tasks) {
+        var listEl = $('tasksList');
+        listEl.innerHTML = '';
+        if (!tasks || tasks.length === 0) {
+          listEl.innerHTML = '<div style="font-size:0.8rem; color:var(--text-dim); text-align:center; padding:12px;">No shared ideas yet. Add one below!</div>';
+          return;
+        }
+
+        tasks.forEach(function (task, idx) {
+          var item = document.createElement('div');
+          item.className = 'task-item' + (task.done ? ' completed' : '');
+          
+          var check = document.createElement('input');
+          check.type = 'checkbox';
+          check.className = 'task-toggle';
+          check.checked = !!task.done;
+          check.onchange = function () {
+            var curr = (room.get('tasks') || []).slice();
+            if (curr[idx]) {
+              curr[idx].done = check.checked;
+              room.set('tasks', curr);
+            }
+          };
+
+          var title = document.createElement('span');
+          title.textContent = task.text;
+          title.style.flex = '1';
+
+          var del = document.createElement('button');
+          del.className = 'task-del';
+          del.innerHTML = '&times;';
+          del.title = 'Delete item';
+          del.onclick = function () {
+            var curr = (room.get('tasks') || []).slice();
+            curr.splice(idx, 1);
+            room.set('tasks', curr);
+          };
+
+          item.appendChild(check);
+          item.appendChild(title);
+          item.appendChild(del);
+          listEl.appendChild(item);
+        });
+      }
+
+      $('addTaskForm').onsubmit = function (e) {
+        e.preventDefault();
+        var input = $('taskInput');
+        var text = input.value.trim();
+        if (!text) return;
+        var curr = (room.get('tasks') || []).slice();
+        curr.push({ text: text, done: false, id: Date.now() });
+        room.set('tasks', curr);
+        input.value = '';
+      };
+
+      // Header controls
+      $('nameInput').onchange = function () {
+        var newName = $('nameInput').value.trim() || 'Guest';
+        localStorage.setItem('syncspace-user-name', newName);
+        window.location.reload();
+      };
+
+      $('copyBtn').onclick = function () {
+        var textToCopy = window.location.href;
+        navigator.clipboard.writeText(textToCopy).then(function () {
+          $('copyBtnText').textContent = 'Copied! ✓';
+          showToast('Shareable room link copied to clipboard!');
+          setTimeout(function () {
+            $('copyBtnText').textContent = 'Copy Link';
+          }, 2000);
+        }).catch(function () {
+          showToast('Could not copy link automatically. Please copy the URL bar.');
+        });
+      };
+
+      $('newRoomBtn').onclick = function () {
+        window.location.search = '?room=' + SyncSpace.randomRoom();
+      };
+
+      // Test Disconnect button
+      $('simDisconnectBtn').onclick = function () {
+        showToast('⚡ Simulating network cut! Watching reconnection...');
+        room.simulateDisconnect();
+      };
+
+      // Connection Status
+      function updateConnectionUI(statusText, dotClass) {
+        $('statusLabel').textContent = statusText;
+        $('statusDot').className = 'status-dot ' + dotClass;
+      }
+
+      // SyncSpace Event Listeners
+      room.on('open', function (info) {
+        var myPeer = room.me();
+        $('myColorDot').style.backgroundColor = myPeer.color || '#6366f1';
+        updateConnectionUI(info.reconnected ? 'Reconnected' : 'Connected', 'open');
+        showToast(info.reconnected ? '⚡ Connection restored! Latest room state synced.' : 'Connected to room ' + roomId);
+        renderState();
+      });
+
+      room.on('reconnecting', function (attempt, delay) {
+        updateConnectionUI('Reconnecting (#' + attempt + ')...', 'reconnecting');
+      });
+
+      room.on('close', function () {
+        updateConnectionUI('Disconnected', 'closed');
+      });
+
+      room.on('error', function (err) {
+        showToast('Error: ' + err.message, true);
+      });
+
+      // Presence
+      room.on('presence', function (peers) {
+        $('peerCount').textContent = peers.length + ' Online';
+        var listEl = $('peersList');
+        listEl.innerHTML = '';
+        var meId = room.me().id;
+
+        peers.forEach(function (p) {
+          var li = document.createElement('li');
+          li.className = 'peer-item';
+
+          var av = document.createElement('div');
+          av.className = 'peer-avatar';
+          av.style.backgroundColor = p.color || '#6366f1';
+          av.textContent = (p.name || 'G').charAt(0).toUpperCase();
+
+          var info = document.createElement('div');
+          info.className = 'peer-info';
+
+          var nameDiv = document.createElement('div');
+          nameDiv.className = 'peer-name';
+          nameDiv.textContent = p.name;
+          if (p.id === meId) {
+            var youBadge = document.createElement('span');
+            youBadge.className = 'peer-badge-you';
+            youBadge.textContent = 'YOU';
+            nameDiv.appendChild(youBadge);
+          }
+
+          var statDiv = document.createElement('div');
+          statDiv.className = 'peer-status';
+          statDiv.innerHTML = '<span style="width:6px;height:6px;border-radius:50%;background:currentColor;display:inline-block;"></span> Active in room';
+
+          info.appendChild(nameDiv);
+          info.appendChild(statDiv);
+          li.appendChild(av);
+          li.appendChild(info);
+          listEl.appendChild(li);
+        });
+
+        // Prune cursors of peers who have left
+        document.querySelectorAll('.cursor-peer').forEach(function (cursorEl) {
+          var cid = cursorEl.dataset.peerId;
+          if (!peers.some(function (p) { return p.id === cid; })) {
+            cursorEl.remove();
+          }
+        });
+      });
+
+      room.on('peer-join', function (peer) {
+        if (peer.id !== room.me().id) {
+          showToast('👋 ' + peer.name + ' joined the room');
+        }
+      });
+
+      room.on('peer-leave', function (id, departed) {
+        if (departed) {
+          showToast('👋 ' + departed.name + ' left the room');
+        }
+      });
+
+      // State updates
+      room.on('state', function (key, val, byId) {
+        if (key === 'reaction' && val) {
+          // byId is empty when this is just the room's old state loaded on join: don't replay it
+          if (byId && byId !== room.me().id) {
+            var sender = room.peers().filter(function (p) { return p.id === byId; })[0];
+            var senderName = sender ? sender.name : (val.from || 'Someone');
+            spawnFloatingEmoji(val.emoji, senderName);
+            addReactionFeed(val.emoji, senderName);
+          }
+          return;
+        }
+
+        if (key && key.startsWith('typing_')) {
+          var typist = val ? val.name : null;
+          $('typingStatus').textContent = typist && byId !== room.me().id ? ('✏️ ' + typist + ' is typing...') : '';
+          return;
+        }
+
+        renderState(key);
+      });
+
+      // Live Cursors
+      document.addEventListener('mousemove', function (e) {
+        // Send normalized 0.0 - 1.0 fractional coordinates
+        room.cursor(e.clientX / window.innerWidth, e.clientY / window.innerHeight);
+      });
+
+      room.on('cursor', function (id, x, y, peer) {
+        var cursorEl = document.querySelector('.cursor-peer[data-peer-id="' + id + '"]');
+        if (!cursorEl) {
+          cursorEl = document.createElement('div');
+          cursorEl.className = 'cursor-peer';
+          cursorEl.dataset.peerId = id;
+          
+          var pColor = peer ? peer.color : '#818cf8';
+          var pName = peer ? peer.name : 'Peer';
+
+          cursorEl.innerHTML = 
+            '<svg viewBox="0 0 24 24" fill="' + pColor + '" stroke="#ffffff" stroke-width="1.2">' +
+              '<path d="M5.5 3.21V20.8c0 .45.54.67.85.35l4.86-4.86a.5.5 0 0 1 .35-.15h6.87a.5.5 0 0 0 .35-.85L6.35 2.86a.5.5 0 0 0-.85.35z"/>' +
+            '</svg>' +
+            '<div class="cursor-peer-label" style="background-color:' + pColor + '">' + pName + '</div>';
+
+          document.body.appendChild(cursorEl);
+        }
+
+        var px = x * window.innerWidth;
+        var py = y * window.innerHeight;
+        cursorEl.style.transform = 'translate(' + px + 'px, ' + py + 'px)';
+      });
+
+      // Toast notification helper
+      function showToast(msg, isError) {
+        var container = $('toast-container');
+        var toast = document.createElement('div');
+        toast.className = 'toast-msg' + (isError ? ' error' : '');
+        toast.textContent = msg;
+        container.appendChild(toast);
+        setTimeout(function () {
+          toast.style.transition = 'opacity 0.3s, transform 0.3s';
+          toast.style.opacity = '0';
+          toast.style.transform = 'translateY(10px)';
+          setTimeout(function () { toast.remove(); }, 300);
+        }, 3500);
+      }
+
+      renderState();
+    })();
+  </script>
+</body>
+</html>
